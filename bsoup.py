@@ -114,59 +114,84 @@ def scrape_article_content(url, browser):
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Scrape NYT articles')
-    parser.add_argument('input_file', help='Path to input CSV file')
+    parser.add_argument('input_path', help='Path to input CSV file or directory (if --all is used)')
     parser.add_argument('--nrows', type=int, help='Number of rows to process (optional)', default=None)
+    parser.add_argument('--all', action='store_true', help='Process all CSV files in the input directory')
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
     output_dir = 'output'
     os.makedirs(output_dir, exist_ok=True)
 
-    # Generate output filename by adding "_out.csv" to the input filename (without extension)
-    input_filename = os.path.basename(args.input_file)  # Get just the filename without path
-    base_name = os.path.splitext(input_filename)[0]
-    output_file = os.path.join(output_dir, f"{base_name}_out.csv")
+    input_files = []
+    if args.all:
+        if not os.path.isdir(args.input_path):
+            print(f"Error: {args.input_path} is not a directory")
+            return
+        # Get all CSV files in the directory
+        input_files = [os.path.join(args.input_path, f) for f in os.listdir(args.input_path) 
+                      if f.endswith('.csv')]
+        if not input_files:
+            print(f"No CSV files found in {args.input_path}")
+            return
+    else:
+        if not os.path.isfile(args.input_path):
+            print(f"Error: {args.input_path} is not a file")
+            return
+        input_files = [args.input_path]
 
-    try:
-        # Read input file with optional nrows parameter
-        df = pd.read_csv(args.input_file, nrows=args.nrows)
-        browser = setup_browser()
+    browser = setup_browser()
 
-        with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
-            fieldnames = ['date', 'url', 'sentiment_score', 'full_headline', 
-                         'article_text', 'author']
-            writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-            writer.writeheader()
+    for input_file in input_files:
+        try:
+            # Generate output filename
+            input_filename = os.path.basename(input_file)
+            base_name = os.path.splitext(input_filename)[0]
+            output_file = os.path.join(output_dir, f"{base_name}_out.csv")
 
-            for _, row in df.iterrows():
-                sentiment = row['sentiment']
-                url = row['url']
-                date = row.get('date', '')
+            print(f"\nProcessing file: {input_filename}")
 
-                print(f"Scraping URL: {url}")
+            # Read input file with optional nrows parameter
+            df = pd.read_csv(input_file, nrows=args.nrows)
 
-                content, scraped_headline, author = scrape_article_content(url, browser)
-                
-                # Use scraped headline if available, otherwise fall back to the one from CSV
-                headline = scraped_headline if scraped_headline else row.get('headline', '')
+            with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
+                fieldnames = ['date', 'url', 'sentiment_score', 'full_headline', 
+                             'article_text', 'author']
+                writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+                writer.writeheader()
 
-                writer.writerow({
-                    'date': date,
-                    'url': url,
-                    'sentiment_score': sentiment,
-                    'full_headline': headline,
-                    'article_text': content,
-                    'author': author or 'Unknown'
-                })
+                for _, row in df.iterrows():
+                    sentiment = row['sentiment']
+                    url = row['url']
+                    date = row.get('date', '')
 
-                time.sleep(random.uniform(2, 5))
+                    print(f"Scraping URL: {url}")
 
-        print(f"Scraping completed. Results saved to {output_file}")
+                    content, scraped_headline, author = scrape_article_content(url, browser)
+                    
+                    # Use scraped headline if available, otherwise fall back to the one from CSV
+                    headline = scraped_headline if scraped_headline else row.get('headline', '')
 
-    except FileNotFoundError:
-        print(f"The file '{args.input_file}' does not exist.")
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
+                    writer.writerow({
+                        'date': date,
+                        'url': url,
+                        'sentiment_score': sentiment,
+                        'full_headline': headline,
+                        'article_text': content,
+                        'author': author or 'Unknown'
+                    })
+
+                    time.sleep(random.uniform(2, 5))
+
+            print(f"Results saved to {output_file}")
+
+        except FileNotFoundError:
+            print(f"The file '{input_file}' does not exist.")
+        except Exception as e:
+            print(f"An error occurred processing {input_file}: {str(e)}")
+            continue
+
+    print("\nAll processing completed!")
 
 
 if __name__ == "__main__":
